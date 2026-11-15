@@ -1,4 +1,4 @@
-nname: Build Telegram iOS (unsigned IPA)
+name: Build Telegram iOS (unsigned IPA)
 
 # Собирает официальный клиент Telegram-iOS (открытый код) со ВАШИМ api_id/api_hash.
 # Результат: IPA, который потом подписывается в Sideloadly. Запуск вручную: Actions -> Run workflow.
@@ -870,3 +870,4 @@ jobs:
           name: build-log
           path: telegram/build.log
           retention-days: 7
+

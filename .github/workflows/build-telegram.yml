@@ -3,7 +3,7 @@ name: Build Telegram iOS (unsigned IPA)
 # Собирает официальный клиент Telegram-iOS (открытый код) со ВАШИМ api_id/api_hash.
 # Результат: IPA, который потом подписывается в Sideloadly. Запуск вручную: Actions -> Run workflow.
 
-"on":
+on:
   workflow_dispatch:
     inputs:
       runner:
@@ -46,6 +46,26 @@ jobs:
           cd telegram
           git log -1 --oneline
           cat versions.json
+
+      - name: Выгрузить исходники Telegram для точного патча
+        if: always()
+        working-directory: telegram
+        run: |
+          set -e
+          mkdir -p ../telegram-source
+          cp submodules/TelegramUI/Sources/ChatControllerNode.swift ../telegram-source/
+          cp submodules/TelegramUI/Sources/ChatHistoryListNode.swift ../telegram-source/
+          git rev-parse HEAD > ../telegram-source/telegram-commit.txt
+          git log -1 --oneline >> ../telegram-source/telegram-commit.txt
+
+      - name: Загрузить исходники Telegram
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-source-for-glassgram
+          path: telegram-source/
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Выбрать Xcode по versions.json
         working-directory: telegram
@@ -760,3 +780,4 @@ jobs:
           name: build-log
           path: telegram/build.log
           retention-days: 7
+

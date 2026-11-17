@@ -11,7 +11,7 @@ on:
         default: 'xcode-27'
         required: true
       ref:
-        description: 'Ветка или тег Telegram-iOS (пусто = master)'
+        description: 'Точная версия Telegram-iOS (по умолчанию — проверенный commit)'
         default: ''
         required: false
 
@@ -55,6 +55,57 @@ jobs:
           mkdir -p ../telegram-source
           cp submodules/TelegramUI/Sources/ChatControllerNode.swift ../telegram-source/
           cp submodules/TelegramUI/Sources/ChatHistoryListNode.swift ../telegram-source/
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          root = Path(".")
+          out = Path("../telegram-source")
+          # Файлы, необходимые для безопасного создания локальных MessageEntry
+          # и управления настоящим полем ввода Telegram.
+          exact_names = {
+              "ChatTextInputPanelNode.swift",
+              "ChatHistoryEntry.swift",
+          }
+          needles = (
+              "enum ChatHistoryEntry",
+              "struct MessageHistoryView",
+              "struct ChatTextInputState",
+              "struct MessageId",
+              "struct MessageIndex",
+              "struct Message:",
+          )
+          roots = [
+              root / "submodules" / "ChatHistoryEntry",
+              root / "submodules" / "Postbox",
+              root / "submodules" / "AccountContext",
+              root / "submodules" / "TelegramCore",
+              root / "submodules" / "TelegramUI" / "Components" / "Chat",
+          ]
+          copied = set()
+          for base in roots:
+              if not base.exists():
+                  continue
+              for file in base.rglob("*.swift"):
+                  if file.name not in exact_names and base.name == "Chat":
+                      # Chat UI component tree: only copy the composer node.
+                      if file.name != "ChatTextInputPanelNode.swift":
+                          continue
+                  try:
+                      source = file.read_text(encoding="utf-8")
+                  except Exception:
+                      continue
+                  if file.name in exact_names or any(n in source for n in needles):
+                      rel = file.relative_to(root)
+                      dest = out / rel
+                      dest.parent.mkdir(parents=True, exist_ok=True)
+                      shutil.copy2(file, dest)
+                      copied.add(str(rel))
+          (out / "dependency-files.txt").write_text(
+              "\\n".join(sorted(copied)) + "\\n", encoding="utf-8"
+          )
+          print("Дополнительные исходники:")
+          print("\\n".join(sorted(copied)))
+          PY
           git rev-parse HEAD > ../telegram-source/telegram-commit.txt
           git log -1 --oneline >> ../telegram-source/telegram-commit.txt
 

@@ -11,7 +11,7 @@ on:
         default: 'xcode-27'
         required: true
       ref:
-        description: 'Точная версия Telegram-iOS (по умолчанию — проверенный commit)'
+        description: 'Ветка, тег или commit Telegram-iOS (пусто = закреплённый проверенный commit)'
         default: ''
         required: false
 
@@ -35,15 +35,20 @@ jobs:
           sw_vers
           ls /Applications | grep -i xcode || true
 
-      - name: Скачать Telegram-iOS
+      - name: Скачать Telegram-iOS (зафиксированная версия)
         run: |
+          set -euo pipefail
           REF="${{ github.event.inputs.ref }}"
-          if [ -n "$REF" ]; then
-            git clone --depth 1 --branch "$REF" --recurse-submodules --shallow-submodules -j8 https://github.com/TelegramMessenger/Telegram-iOS.git telegram
-          else
-            git clone --depth 1 --recurse-submodules --shallow-submodules -j8 https://github.com/TelegramMessenger/Telegram-iOS.git telegram
+          if [ -z "$REF" ]; then
+            REF="24638bc69bd083981b178dd1e7f921eebbf7fc46"
           fi
+          git init telegram
           cd telegram
+          git remote add origin https://github.com/TelegramMessenger/Telegram-iOS.git
+          git fetch --depth 1 origin "$REF"
+          git checkout --detach FETCH_HEAD
+          git submodule update --init --recursive --depth 1
+          echo "Используем Telegram-iOS commit: $(git rev-parse HEAD)"
           git log -1 --oneline
           cat versions.json
 
@@ -55,6 +60,9 @@ jobs:
           mkdir -p ../telegram-source
           cp submodules/TelegramUI/Sources/ChatControllerNode.swift ../telegram-source/
           cp submodules/TelegramUI/Sources/ChatHistoryListNode.swift ../telegram-source/
+          if [ -f submodules/TelegramUI/Sources/ChatController.swift ]; then
+            cp submodules/TelegramUI/Sources/ChatController.swift ../telegram-source/
+          fi
           python3 - <<'PY'
           from pathlib import Path
           import shutil
@@ -73,6 +81,10 @@ jobs:
               "struct MessageId",
               "struct MessageIndex",
               "struct Message:",
+              "MessageEntry(",
+              "MessageGroupEntry(",
+              "ChatHistoryListSource",
+              "ChatCustomContentsProtocol",
           )
           roots = [
               root / "submodules" / "ChatHistoryEntry",
@@ -106,8 +118,12 @@ jobs:
           print("Дополнительные исходники:")
           print("\\n".join(sorted(copied)))
           PY
-          git rev-parse HEAD > ../telegram-source/telegram-commit.txt
-          git log -1 --oneline >> ../telegram-source/telegram-commit.txt
+          {
+            echo "Telegram-iOS: $(git rev-parse HEAD)"
+            echo "Telegram-iOS: $(git log -1 --oneline)"
+            echo "Submodules:"
+            git submodule status
+          } > ../telegram-source/telegram-commit.txt
 
       - name: Загрузить исходники Telegram
         if: always()
@@ -313,7 +329,8 @@ jobs:
           print('команда /nft добавлена')
           PY
 
-      - name: Патч - локальная Студия сценариев (жест двумя пальцами)
+      - name: Патч - локальная Студия сценариев (старый отдельный экран отключён)
+        if: false
         working-directory: telegram
         run: |
           set -eo pipefail
@@ -831,4 +848,3 @@ jobs:
           name: build-log
           path: telegram/build.log
           retention-days: 7
-

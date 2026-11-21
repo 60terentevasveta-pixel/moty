@@ -1,4 +1,4 @@
-name: Build Telegram iOS Glassgram v8 (unsigned IPA)
+name: Build Telegram iOS Glassgram v9 (unsigned IPA)
 
 # Собирает официальный клиент Telegram-iOS (открытый код) со ВАШИМ api_id/api_hash.
 # Результат: IPA, который потом подписывается в Sideloadly. Запуск вручную: Actions -> Run workflow.
@@ -872,7 +872,7 @@ jobs:
               source = source.replace('import TelegramCore\n', 'import TelegramCore\nimport MediaResources\n', 1)
           open(p, 'w', encoding='utf-8').write(source)
 
-          # Локальные исходящие сообщения сценария считаются прочитанными: стандартные галочки Telegram.
+          # В Postbox нет TelegramCore.Namespaces: namespace Local равен 1. Локальные исходящие сценарии считаются прочитанными.
           history_path = 'submodules/Postbox/Sources/MessageHistoryView.swift'
           history = open(history_path, encoding='utf-8').read()
           old_thread = "\n".join([
@@ -883,7 +883,7 @@ jobs:
               "                        }"
           ])
           new_thread = "\n".join([
-              "                        if entry.message.id.namespace == Namespaces.Message.Local && !entry.message.flags.contains(.Incoming) {",
+              "                        if entry.message.id.namespace == 1 && !entry.message.flags.contains(.Incoming) {",
               "                            read = true",
               "                        } else if let threadId = entry.message.threadId {",
               "                            if let maxId = mutableView.threadMaxOutgoingReadId[threadId] {",
@@ -895,7 +895,7 @@ jobs:
           history = history.replace(old_thread, new_thread, 1)
           old_state = "                        } else if let readState = states[entry.message.id.peerId] {"
           new_state = "\n".join([
-              "                        } else if entry.message.id.namespace == Namespaces.Message.Local {",
+              "                        } else if entry.message.id.namespace == 1 {",
               "                            read = true",
               "                        } else if let readState = states[entry.message.id.peerId] {"
           ])
@@ -903,7 +903,7 @@ jobs:
           history = history.replace(old_state, new_state, 1)
           fallback = "                        entries.append(MessageHistoryEntry(message: entry.message, isRead: false, location: entry.location, monthLocation: entry.monthLocation, attributes: entry.attributes))"
           fallback_new = "\n".join([
-              "                        let isLocalOutgoingRead = entry.message.id.namespace == Namespaces.Message.Local && !entry.message.flags.contains(.Incoming)",
+              "                        let isLocalOutgoingRead = entry.message.id.namespace == 1 && !entry.message.flags.contains(.Incoming)",
               "                        entries.append(MessageHistoryEntry(message: entry.message, isRead: isLocalOutgoingRead, location: entry.location, monthLocation: entry.monthLocation, attributes: entry.attributes))"
           ])
           assert history.count(fallback) >= 1, 'не найден fallback расчёта прочтения'

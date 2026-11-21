@@ -755,6 +755,19 @@ jobs:
               'cmFtU3RvcFNjZW5hcmlvKCkKICAgICAgICB9IGVsc2UgewogICAgICAgICAgICBzZWxmLmdsYXNzZ3JhbVByZXNlbnRTY2Vu'
               'YXJpb1N0dWRpbygpCiAgICAgICAgfQogICAgfQoK'
           ).decode('utf-8')
+          nft_scenario_old = '                    self.glassgramInsertScenarioMessage(message.text, fromMe: false)'
+          nft_scenario_new = '''                    let scenarioText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if scenarioText.lowercased().hasPrefix("/nft ") {
+                        let slug = String(scenarioText.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !slug.isEmpty {
+                            self.glassgramInsertLocalGift(slug: slug)
+                        }
+                    } else {
+                        self.glassgramInsertScenarioMessage(message.text, fromMe: false)
+                    }'''
+          assert methods.count(nft_scenario_old) == 1, 'не найден блок входящего сообщения сценария'
+          methods = methods.replace(nft_scenario_old, nft_scenario_new, 1)
+          assert 'self.glassgramInsertLocalGift(slug: slug)' in methods
           props = base64.b64decode(
               'ICAgIHByaXZhdGUgdmFyIGdsYXNzZ3JhbVBsYXliYWNrV29yazogRGlzcGF0Y2hXb3JrSXRlbT8KICAgIHByaXZhdGUgdmFy'
               'IGdsYXNzZ3JhbVBsYXliYWNrR2VuZXJhdGlvbjogSW50ID0gMAogICAgcHJpdmF0ZSB2YXIgZ2xhc3NncmFtUGxheWJhY2tQ'

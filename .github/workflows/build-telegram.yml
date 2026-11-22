@@ -161,7 +161,7 @@ jobs:
           s = p.read_text(encoding="utf-8")
 
           old_badge = "if peer.isVerified {"
-          new_badge = '''if peer.isVerified || ((peer as? TelegramUser) != nil && UserDefaults.standard.bool(forKey: "glassgram.global.major")) {'''
+          new_badge = '''if peer.isVerified || ((peer.id.namespace == Namespaces.Peer.CloudUser || peer.id.namespace == Namespaces.Peer.SecretChat) && UserDefaults.standard.bool(forKey: "glassgram.global.major")) {'''
           assert s.count(old_badge) == 1, "не найден блок штатной верификации Telegram"
           s = s.replace(old_badge, new_badge, 1)
 
@@ -190,7 +190,7 @@ jobs:
           status_anchor = "        if self.activityNode.transitionToState(state, animation: enableAnimation ? .slide : .none) {"
           online_override = '''        if let titleContent = self.titleContent,
              case let .peer(peerView, _, _, _, _, _, _, _, _) = titleContent,
-             peerView.peer is TelegramUser,
+             (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat),
              UserDefaults.standard.bool(forKey: "glassgram.global.online") {
               let onlineString = NSAttributedString(string: "online", font: subtitleFont, textColor: titleTheme.rootController.navigationBar.accentTextColor)
               state = .info(onlineString, .online)

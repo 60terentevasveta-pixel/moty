@@ -52,79 +52,6 @@ jobs:
           git log -1 --oneline
           cat versions.json
 
-      - name: Выгрузить настоящие файлы раздела настроек Glassgram
-        if: always()
-        working-directory: telegram
-        run: |
-          set -euo pipefail
-          mkdir -p ../telegram-source/settings-discovery
-          # Сохраняем все файлы SettingsUI: корневой SettingsController.swift
-          # является только API-протоколом, а реальные экраны находятся в отдельных контроллерах.
-          if [ -d submodules/SettingsUI/Sources ]; then
-            mkdir -p ../telegram-source/settings-discovery/SettingsUI
-            cp -R submodules/SettingsUI/Sources ../telegram-source/settings-discovery/SettingsUI/
-          fi
-          # Находим все одноимённые контроллеры и Swift-файлы, связанные с главным экраном настроек.
-          find submodules/TelegramUI submodules/SettingsUI -type f \
-            \( -iname '*SettingsController.swift' -o -iname '*SettingsEntry.swift' -o -iname '*SettingsItem.swift' \) \
-            -print 2>/dev/null | sort > ../telegram-source/settings-discovery/settings-controller-paths.txt
-          while IFS= read -r file; do
-            [ -f "$file" ] || continue
-            rel="${file#submodules/}"
-            mkdir -p "../telegram-source/settings-discovery/$(dirname "$rel")"
-            cp "$file" "../telegram-source/settings-discovery/$rel"
-          done < ../telegram-source/settings-discovery/settings-controller-paths.txt
-          echo '--- Найденные файлы настроек ---'
-          cat ../telegram-source/settings-discovery/settings-controller-paths.txt
-
-      - name: Выгрузить все Swift-файлы главного экрана настроек
-        if: always()
-        working-directory: telegram
-        run: |
-          set -euo pipefail
-          out="../telegram-source/settings-discovery/all-settings-swift"
-          mkdir -p "$out"
-          list="../telegram-source/settings-discovery/all-settings-swift-paths.txt"
-          : > "$list"
-          for root in submodules/TelegramUI Telegram; do
-            if [ -d "$root" ]; then
-              find "$root" -type f -iname '*Settings*.swift' -print
-            fi
-          done | sort -u > "$list"
-          while IFS= read -r file; do
-            [ -f "$file" ] || continue
-            rel="${file#./}"
-            mkdir -p "$out/$(dirname "$rel")"
-            cp "$file" "$out/$rel"
-          done < "$list"
-          echo '--- Все Swift-файлы, связанные с настройками ---'
-          cat "$list"
-
-      - name: Выгрузить исходники главного экрана настроек PeerInfoScreen
-        if: always()
-        working-directory: telegram
-        run: |
-          set -euo pipefail
-          src="submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources"
-          dst="../telegram-source/PeerInfoScreen/Sources"
-          mkdir -p "../telegram-source/PeerInfoScreen"
-          if [ -d "$src" ]; then
-            mkdir -p "$dst"
-            cp -R "$src"/. "$dst"/
-            find "$src" -type f -maxdepth 1 -print | sort > ../telegram-source/PeerInfoScreen/source-files.txt
-            echo "--- Выгруженные файлы PeerInfoScreen ---"
-            cat ../telegram-source/PeerInfoScreen/source-files.txt
-            if [ -f "$src/PeerInfoScreen.swift" ]; then
-              echo "MAIN_SCREEN_FOUND=yes" > ../telegram-source/PeerInfoScreen/status.txt
-            else
-              echo "MAIN_SCREEN_FOUND=no" > ../telegram-source/PeerInfoScreen/status.txt
-              echo "PeerInfoScreen.swift отсутствует в этой версии исходников." >> ../telegram-source/PeerInfoScreen/status.txt
-            fi
-          else
-            echo "Папка PeerInfoScreen/Sources не найдена" > ../telegram-source/PeerInfoScreen/status.txt
-            echo "::warning::PeerInfoScreen/Sources не найден" 
-          fi
-
       - name: Выгрузить исходники Telegram для точного патча
         if: always()
         working-directory: telegram
@@ -224,7 +151,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Патч - локальная верификация Major и статус online в заголовке чата
+      - name: Патч - глобальные переключатели Major и online в заголовке чата
         working-directory: telegram
         run: |
           set -euo pipefail
@@ -234,7 +161,7 @@ jobs:
           s = p.read_text(encoding="utf-8")
 
           old_badge = "if peer.isVerified {"
-          new_badge = '''if peer.isVerified || UserDefaults.standard.bool(forKey: "glassgram.header.major.\\(String(describing: peerView.peerId))") {'''
+          new_badge = '''if peer.isVerified || ((peer as? TelegramUser) != nil && UserDefaults.standard.bool(forKey: "glassgram.global.major")) {'''
           assert s.count(old_badge) == 1, "не найден блок штатной верификации Telegram"
           s = s.replace(old_badge, new_badge, 1)
 
@@ -263,7 +190,8 @@ jobs:
           status_anchor = "        if self.activityNode.transitionToState(state, animation: enableAnimation ? .slide : .none) {"
           online_override = '''        if let titleContent = self.titleContent,
              case let .peer(peerView, _, _, _, _, _, _, _, _) = titleContent,
-             UserDefaults.standard.bool(forKey: "glassgram.header.online.\\(String(describing: peerView.peerId))") {
+             peerView.peer is TelegramUser,
+             UserDefaults.standard.bool(forKey: "glassgram.global.online") {
               let onlineString = NSAttributedString(string: "online", font: subtitleFont, textColor: titleTheme.rootController.navigationBar.accentTextColor)
               state = .info(onlineString, .online)
           }
@@ -272,7 +200,7 @@ jobs:
           assert s.count(status_anchor) == 1, "не найдено место обновления статуса online"
           s = s.replace(status_anchor, online_override + status_anchor, 1)
           p.write_text(s, encoding="utf-8")
-          print("Патч заголовка применён: Major badge + online")
+          print("Патч заголовка применён: глобальные Major badge + online")
           PY
 
       - name: Выбрать Xcode по versions.json
@@ -1004,6 +932,63 @@ jobs:
               'ICAgICAgICAgICBzZWxmLmdsYXNzZ3JhbVN0b3BTY2VuYXJpbygpCiAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgc2VsZi5n'
               'bGFzc2dyYW1QcmVzZW50U2NlbmFyaW9TdHVkaW8oKQogICAgICAgIH0KICAgIH0KCg=='
           ).decode('utf-8')
+          # Добавить отдельный экран глобальных настроек в студию Glassgram.
+          settings_class_anchor = 'final class GlassgramScenarioListController: UITableViewController {'
+          settings_class = '''final class GlassgramHeaderSettingsController: UITableViewController {
+              private let majorKey = "glassgram.global.major"
+              private let onlineKey = "glassgram.global.online"
+              override func viewDidLoad() {
+                  super.viewDidLoad()
+                  title = "Настройки Glassgram"
+                  tableView.register(UITableViewCell.self, forCellReuseIdentifier: "headerSetting")
+                  tableView.tableFooterView = UIView()
+              }
+              override func numberOfSections(in tableView: UITableView) -> Int { 1 }
+              override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 2 }
+              override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+                  return "Параметры действуют глобально во всех личных переписках и сохраняются после перезапуска. Изменяется только отображение на этом устройстве."
+              }
+              override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+                  let cell = tableView.dequeueReusableCell(withIdentifier: "headerSetting", for: indexPath)
+                  let toggle = UISwitch()
+                  toggle.tag = indexPath.row
+                  toggle.addTarget(self, action: #selector(self.valueChanged(_:)), for: .valueChanged)
+                  if indexPath.row == 0 {
+                      cell.textLabel?.text = "Верификация Major"
+                      toggle.isOn = UserDefaults.standard.bool(forKey: majorKey)
+                  } else {
+                      cell.textLabel?.text = "Статус online"
+                      toggle.isOn = UserDefaults.standard.bool(forKey: onlineKey)
+                  }
+                  cell.accessoryView = toggle
+                  cell.selectionStyle = .none
+                  return cell
+              }
+              @objc private func valueChanged(_ sender: UISwitch) {
+                  UserDefaults.standard.set(sender.isOn, forKey: sender.tag == 0 ? majorKey : onlineKey)
+                  NotificationCenter.default.post(name: Notification.Name("GlassgramHeaderSettingsChanged"), object: nil)
+              }
+          }
+
+          '''
+          assert panel.count(settings_class_anchor) == 1, 'Не найден список сценариев Glassgram'
+          panel = panel.replace(settings_class_anchor, settings_class + settings_class_anchor, 1)
+          add_button = '        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addScenario))\n'
+          add_buttons = '''        navigationItem.rightBarButtonItems = [
+                  UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addScenario)),
+                  UIBarButtonItem(title: "Настройки", style: .plain, target: self, action: #selector(openHeaderSettings))
+              ]
+          '''
+          assert panel.count(add_button) == 1, 'Не найдена кнопка добавления сценария'
+          panel = panel.replace(add_button, add_buttons, 1)
+          close_method = '    @objc private func close() { dismiss(animated: true) }\n'
+          open_method = close_method + '''
+              @objc private func openHeaderSettings() {
+                  navigationController?.pushViewController(GlassgramHeaderSettingsController(style: .insetGrouped), animated: true)
+              }
+          '''
+          assert panel.count(close_method) == 1, 'Не найдена точка вставки настроек'
+          panel = panel.replace(close_method, open_method, 1)
           nft_scenario_old = '                    self.glassgramInsertScenarioMessage(message.text, fromMe: false)'
           nft_scenario_new = '''                    let scenarioText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     if scenarioText.lowercased().hasPrefix("/nft ") {

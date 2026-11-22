@@ -77,6 +77,29 @@ jobs:
           echo '--- Найденные файлы настроек ---'
           cat ../telegram-source/settings-discovery/settings-controller-paths.txt
 
+      - name: Выгрузить все Swift-файлы главного экрана настроек
+        if: always()
+        working-directory: telegram
+        run: |
+          set -euo pipefail
+          out="../telegram-source/settings-discovery/all-settings-swift"
+          mkdir -p "$out"
+          list="../telegram-source/settings-discovery/all-settings-swift-paths.txt"
+          : > "$list"
+          for root in submodules/TelegramUI Telegram; do
+            if [ -d "$root" ]; then
+              find "$root" -type f -iname '*Settings*.swift' -print
+            fi
+          done | sort -u > "$list"
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            rel="${file#./}"
+            mkdir -p "$out/$(dirname "$rel")"
+            cp "$file" "$out/$rel"
+          done < "$list"
+          echo '--- Все Swift-файлы, связанные с настройками ---'
+          cat "$list"
+
       - name: Выгрузить исходники Telegram для точного патча
         if: always()
         working-directory: telegram

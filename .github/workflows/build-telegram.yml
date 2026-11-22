@@ -100,6 +100,31 @@ jobs:
           echo '--- Все Swift-файлы, связанные с настройками ---'
           cat "$list"
 
+      - name: Выгрузить исходники главного экрана настроек PeerInfoScreen
+        if: always()
+        working-directory: telegram
+        run: |
+          set -euo pipefail
+          src="submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources"
+          dst="../telegram-source/PeerInfoScreen/Sources"
+          mkdir -p "../telegram-source/PeerInfoScreen"
+          if [ -d "$src" ]; then
+            mkdir -p "$dst"
+            cp -R "$src"/. "$dst"/
+            find "$src" -type f -maxdepth 1 -print | sort > ../telegram-source/PeerInfoScreen/source-files.txt
+            echo "--- Выгруженные файлы PeerInfoScreen ---"
+            cat ../telegram-source/PeerInfoScreen/source-files.txt
+            if [ -f "$src/PeerInfoScreen.swift" ]; then
+              echo "MAIN_SCREEN_FOUND=yes" > ../telegram-source/PeerInfoScreen/status.txt
+            else
+              echo "MAIN_SCREEN_FOUND=no" > ../telegram-source/PeerInfoScreen/status.txt
+              echo "PeerInfoScreen.swift отсутствует в этой версии исходников." >> ../telegram-source/PeerInfoScreen/status.txt
+            fi
+          else
+            echo "Папка PeerInfoScreen/Sources не найдена" > ../telegram-source/PeerInfoScreen/status.txt
+            echo "::warning::PeerInfoScreen/Sources не найден" 
+          fi
+
       - name: Выгрузить исходники Telegram для точного патча
         if: always()
         working-directory: telegram

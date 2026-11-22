@@ -161,7 +161,7 @@ jobs:
           s = p.read_text(encoding="utf-8")
 
           old_badge = "if peer.isVerified {"
-          new_badge = '''if peer.isVerified || (peer.id != self.context.account.peerId && (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat) && UserDefaults.standard.bool(forKey: "glassgram.global.major")) {'''
+          new_badge = '''if peer.isVerified || (peerView.peerId != self.context.account.peerId && (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat) && UserDefaults.standard.bool(forKey: "glassgram.global.major")) {'''
           assert s.count(old_badge) == 1, "не найден блок штатной верификации Telegram"
           s = s.replace(old_badge, new_badge, 1)
 
@@ -189,7 +189,8 @@ jobs:
 
           status_anchor = "        if self.activityNode.transitionToState(state, animation: enableAnimation ? .slide : .none) {"
           online_override = '''        if let titleContent = self.titleContent,
-             case let .peer(peerView, _, _, _, _, _, _, _, _) = titleContent,
+             case let .peer(peerView, _, _, _, isScheduledMessages, _, _, _, _) = titleContent,
+             !isScheduledMessages,
              peerView.peerId != self.context.account.peerId,
              (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat),
              UserDefaults.standard.bool(forKey: "glassgram.global.online") {
@@ -202,6 +203,8 @@ jobs:
           s = s.replace(status_anchor, online_override + status_anchor, 1)
           p.write_text(s, encoding="utf-8")
           print("Патч заголовка применён: глобальные Major badge + online")
+          print("Проверка Major namespace:", "glassgram.global.major" in s and "peerView.peerId.namespace == Namespaces.Peer.CloudUser" in s)
+          print("Проверка Online namespace:", "glassgram.global.online" in s and "state = .info(onlineString, .generic)" in s)
           PY
 
       - name: Выбрать Xcode по versions.json

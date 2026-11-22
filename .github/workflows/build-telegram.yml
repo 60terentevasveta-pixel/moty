@@ -52,6 +52,31 @@ jobs:
           git log -1 --oneline
           cat versions.json
 
+      - name: Выгрузить настоящие файлы раздела настроек Glassgram
+        if: always()
+        working-directory: telegram
+        run: |
+          set -euo pipefail
+          mkdir -p ../telegram-source/settings-discovery
+          # Сохраняем все файлы SettingsUI: корневой SettingsController.swift
+          # является только API-протоколом, а реальные экраны находятся в отдельных контроллерах.
+          if [ -d submodules/SettingsUI/Sources ]; then
+            mkdir -p ../telegram-source/settings-discovery/SettingsUI
+            cp -R submodules/SettingsUI/Sources ../telegram-source/settings-discovery/SettingsUI/
+          fi
+          # Находим все одноимённые контроллеры и Swift-файлы, связанные с главным экраном настроек.
+          find submodules/TelegramUI submodules/SettingsUI -type f \
+            \( -iname '*SettingsController.swift' -o -iname '*SettingsEntry.swift' -o -iname '*SettingsItem.swift' \) \
+            -print 2>/dev/null | sort > ../telegram-source/settings-discovery/settings-controller-paths.txt
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            rel="${file#submodules/}"
+            mkdir -p "../telegram-source/settings-discovery/$(dirname "$rel")"
+            cp "$file" "../telegram-source/settings-discovery/$rel"
+          done < ../telegram-source/settings-discovery/settings-controller-paths.txt
+          echo '--- Найденные файлы настроек ---'
+          cat ../telegram-source/settings-discovery/settings-controller-paths.txt
+
       - name: Выгрузить исходники Telegram для точного патча
         if: always()
         working-directory: telegram

@@ -125,6 +125,23 @@ jobs:
             git submodule status
           } > ../telegram-source/telegram-commit.txt
 
+      - name: Отдельно выгрузить ChatTitleView.swift
+        if: always()
+        working-directory: telegram
+        run: |
+          set -euo pipefail
+          mkdir -p ../telegram-source/ChatTitleView
+          MATCH=$(find submodules/TelegramUI -type f -name 'ChatTitleView.swift' -print -quit || true)
+          if [ -n "$MATCH" ]; then
+            mkdir -p "../telegram-source/$(dirname "$MATCH")"
+            cp "$MATCH" "../telegram-source/$MATCH"
+            printf 'Найден и сохранён файл: %s\n' "$MATCH"
+          else
+            echo "::warning::ChatTitleView.swift не найден в submodules/TelegramUI"
+            echo "ChatTitleView.swift не найден" > ../telegram-source/ChatTitleView/NOT_FOUND.txt
+            echo "Проверь закреплённый commit Telegram-iOS и структуру ChatTitleView." >> ../telegram-source/ChatTitleView/NOT_FOUND.txt
+          fi
+
       - name: Загрузить исходники Telegram
         if: always()
         uses: actions/upload-artifact@v4

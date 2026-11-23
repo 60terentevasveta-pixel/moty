@@ -157,7 +157,7 @@ jobs:
                               path.addQuadCurve(to: CGPoint(x: (point.x + next.x) / 2.0, y: (point.y + next.y) / 2.0), controlPoint: point)
                           }
                           path.close()
-                          UIColor(red: 0.36, green: 0.69, blue: 0.96, alpha: 1.0).setFill()
+                          UIColor.white.setFill()
                           path.fill()
 
                           let crown = UIBezierPath()
@@ -171,7 +171,7 @@ jobs:
                           crown.close()
                           context.setBlendMode(.clear)
                           crown.fill()
-                      }
+                      }.withRenderingMode(.alwaysTemplate)
                   }()
                   private let glassgramMajorIcon = UIImageView(image: View.glassgramMajorImage)
                   private var leftIcon: ComponentView<Empty>?""",
@@ -195,6 +195,7 @@ jobs:
                           if self.glassgramMajorIcon.superview == nil {
                               self.contentContainer.addSubview(self.glassgramMajorIcon)
                           }
+                          self.glassgramMajorIcon.tintColor = component.theme.rootController.navigationBar.accentTextColor
                           transition.setFrame(view: self.glassgramMajorIcon, frame: CGRect(
                               x: titleFrame.minX - majorIconWidth,
                               y: floorToScreenPixels(titleFrame.midY - majorIconSize.height / 2.0),

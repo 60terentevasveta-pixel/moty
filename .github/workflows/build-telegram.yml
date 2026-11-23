@@ -205,6 +205,36 @@ jobs:
                       }
                       let leadingIconsLayout = chatTitleLeadingIconsLayout(titleFrame: titleFrame.offsetBy(dx: -majorIconWidth, dy: 0.0),""",
           )
+          replace(
+              "    private var networkState: AccountNetworkState?\n",
+              """    private var networkState: AccountNetworkState?
+              private var glassgramScenarioTyping = false
+
+              public func setGlassgramScenarioTyping(_ isTyping: Bool) {
+                  guard self.glassgramScenarioTyping != isTyping else { return }
+                  self.glassgramScenarioTyping = isTyping
+                  self.update(transition: .immediate)
+              }
+          """,
+          )
+          replace(
+              "            let titleSize = self.title.update(\n                transition: transition,\n                component: AnyComponent(ChatTitleComponent(",
+              """            var displayedActivities = self.activities
+                      if self.glassgramScenarioTyping,
+                         case let .peer(peerView, _, _, _, scheduled, _, _, _, _) = contentData.content,
+                         !scheduled, peerView.peerId != contentData.context.account.peerId,
+                         (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat),
+                         let peer = peerView.peer as? TelegramUser {
+                          displayedActivities = ChatTitleComponent.Activities(
+                              peerId: peerView.peerId,
+                              items: [.init(peer: EnginePeer(peer), activity: .typingText)]
+                          )
+                      }
+                      let titleSize = self.title.update(
+                          transition: transition,
+                          component: AnyComponent(ChatTitleComponent(""",
+          )
+          replace("                    activities: self.activities,", "                    activities: displayedActivities,")
           path.write_text(source, encoding="utf-8")
           print(f"Glassgram Major/Online patched in {path}")
           PY
@@ -1013,6 +1043,39 @@ jobs:
           assert methods.count(nft_scenario_old) == 1, 'не найден блок входящего сообщения сценария'
           methods = methods.replace(nft_scenario_old, nft_scenario_new, 1)
           assert 'self.glassgramInsertLocalGift(slug: slug)' in methods
+          typing_start = """            self.glassgramSchedule(message.delay, generation: generation) {"""
+          typing_schedule = """            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                      if !message.fromMe, message.imageData == nil, !text.isEmpty, !text.lowercased().hasPrefix("/nft ") {
+                          let typingDuration = min(1.5, max(0.8, message.delay))
+                          self.glassgramSchedule(max(0.0, message.delay - typingDuration), generation: generation) {
+                              self.glassgramIncomingTyping = true
+                              self.glassgramUpdateIncomingTyping()
+                              self.glassgramSchedule(typingDuration, generation: generation) {
+                                  self.glassgramIncomingTyping = false
+                                  self.glassgramUpdateIncomingTyping()
+                                  self.glassgramInsertScenarioMessage(message.text, fromMe: false)
+                                  playMessage(index + 1)
+                              }
+                          }
+                          return
+                      }
+                      self.glassgramSchedule(message.delay, generation: generation) {"""
+          assert methods.count(typing_start) == 1
+          methods = methods.replace(typing_start, typing_schedule, 1)
+          pause_anchor = "            self.glassgramPlaybackWork = nil\n        }\n    }\n\n    private func glassgramStopScenario()"
+          assert methods.count(pause_anchor) == 1
+          methods = methods.replace(pause_anchor, pause_anchor.replace("        }\n    }", "        }\n        self.glassgramUpdateIncomingTyping()\n    }"), 1)
+          active_anchor = "        self.glassgramPlaybackPaused = false\n        self.glassgramPlaybackIsActive = "
+          assert methods.count(active_anchor) == 2
+          methods = methods.replace(active_anchor, """        self.glassgramPlaybackPaused = false
+                  self.glassgramIncomingTyping = false
+                  self.glassgramUpdateIncomingTyping()
+                  self.glassgramPlaybackIsActive = """)
+          methods += """    private func glassgramUpdateIncomingTyping() {
+                  self.controller?.chatTitleView?.setGlassgramScenarioTyping(self.glassgramIncomingTyping && !self.glassgramPlaybackPaused)
+              }
+
+          """
           props = base64.b64decode(
               'ICAgIHByaXZhdGUgdmFyIGdsYXNzZ3JhbVBsYXliYWNrV29yazogRGlzcGF0Y2hXb3JrSXRlbT8KICAgIHByaXZhdGUgdmFy'
               'IGdsYXNzZ3JhbVBsYXliYWNrR2VuZXJhdGlvbjogSW50ID0gMAogICAgcHJpdmF0ZSB2YXIgZ2xhc3NncmFtUGxheWJhY2tQ'
@@ -1021,6 +1084,7 @@ jobs:
               'ciBnbGFzc2dyYW1TY2hlZHVsZWRBdCA9IERhdGUoKQogICAgcHJpdmF0ZSB2YXIgZ2xhc3NncmFtU2NoZWR1bGVkRGVsYXk6'
               'IERvdWJsZSA9IDAuMAogICAgcHJpdmF0ZSB2YXIgZ2xhc3NncmFtUmVtYWluaW5nRGVsYXk6IERvdWJsZSA9IDAuMAo='
           ).decode('utf-8')
+          props += "    private var glassgramIncomingTyping = false\n"
           panel_path = 'submodules/TelegramUI/Sources/GlassgramPanel.swift'
           with open(panel_path, 'w', encoding='utf-8') as f:
               f.write(panel)

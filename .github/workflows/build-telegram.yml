@@ -1,4 +1,4 @@
-name: Build Telegram iOS Glassgram v17 diagnostic (unsigned IPA)
+name: Build Telegram iOS Glassgram v9 (unsigned IPA)
 
 # Собирает официальный клиент Telegram-iOS (открытый код) со ВАШИМ api_id/api_hash.
 # Результат: IPA, который потом подписывается в Sideloadly. Запуск вручную: Actions -> Run workflow.
@@ -151,7 +151,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Диагностика - принудительный Major и чтение глобальных переключателей
+      - name: Патч - глобальные переключатели Major и online в заголовке чата
         working-directory: telegram
         run: |
           set -euo pipefail
@@ -161,7 +161,7 @@ jobs:
           s = p.read_text(encoding="utf-8")
 
           old_badge = "if peer.isVerified {"
-          new_badge = '''if peer.isVerified || (peerView.peerId != self.context.account.peerId && (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat)) {'''
+          new_badge = '''if peer.isVerified || (peerView.peerId != self.context.account.peerId && (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat) && UserDefaults.standard.bool(forKey: "glassgram.global.major")) {'''
           assert s.count(old_badge) == 1, "не найден блок штатной верификации Telegram"
           s = s.replace(old_badge, new_badge, 1)
 
@@ -201,23 +201,8 @@ jobs:
           '''
           assert s.count(status_anchor) == 1, "не найдено место обновления статуса online"
           s = s.replace(status_anchor, online_override + status_anchor, 1)
-
-          diagnostic = '''        if let titleContent = self.titleContent,
-               case let .peer(peerView, _, _, _, isScheduledMessages, _, _, _, _) = titleContent,
-               !isScheduledMessages,
-               peerView.peerId != self.context.account.peerId,
-               (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat) {
-              let major = UserDefaults.standard.bool(forKey: "glassgram.global.major")
-              let online = UserDefaults.standard.bool(forKey: "glassgram.global.online")
-              let debugText = "GG DEBUG M=\\(major ? "ON" : "OFF") O=\\(online ? "ON" : "OFF")"
-              let debugString = NSAttributedString(string: debugText, font: subtitleFont, textColor: titleTheme.rootController.navigationBar.accentTextColor)
-              state = .info(debugString, .generic)
-          }
-
-          '''
-          s = s.replace(status_anchor, diagnostic + status_anchor, 1)
           p.write_text(s, encoding="utf-8")
-          print("ДИАГНОСТИКА: принудительный badge + чтение ключей Major/Online")
+          print("Патч заголовка применён: глобальные Major badge + online")
           print("Проверка Major namespace:", "glassgram.global.major" in s and "peerView.peerId.namespace == Namespaces.Peer.CloudUser" in s)
           print("Проверка Online namespace:", "glassgram.global.online" in s and "state = .info(onlineString, .generic)" in s)
           PY

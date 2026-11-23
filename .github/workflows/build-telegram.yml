@@ -1,4 +1,4 @@
-name: Build Telegram iOS Glassgram v17 diagnostic (unsigned IPA)
+name: Build Telegram iOS Glassgram Major and Online (unsigned IPA)
 
 # Собирает официальный клиент Telegram-iOS (открытый код) со ВАШИМ api_id/api_hash.
 # Результат: IPA, который потом подписывается в Sideloadly. Запуск вручную: Actions -> Run workflow.
@@ -52,174 +52,92 @@ jobs:
           git log -1 --oneline
           cat versions.json
 
-      - name: Выгрузить исходники Telegram для точного патча
-        if: always()
-        working-directory: telegram
-        run: |
-          set -e
-          mkdir -p ../telegram-source
-          cp submodules/TelegramUI/Sources/ChatControllerNode.swift ../telegram-source/
-          cp submodules/TelegramUI/Sources/ChatHistoryListNode.swift ../telegram-source/
-          if [ -f submodules/TelegramUI/Sources/ChatController.swift ]; then
-            cp submodules/TelegramUI/Sources/ChatController.swift ../telegram-source/
-          fi
-          python3 - <<'PY'
-          from pathlib import Path
-          import shutil
-          root = Path(".")
-          out = Path("../telegram-source")
-          # Файлы, необходимые для безопасного создания локальных MessageEntry
-          # и управления настоящим полем ввода Telegram.
-          exact_names = {
-              "ChatTextInputPanelNode.swift",
-              "ChatHistoryEntry.swift",
-          }
-          needles = (
-              "enum ChatHistoryEntry",
-              "struct MessageHistoryView",
-              "struct ChatTextInputState",
-              "struct MessageId",
-              "struct MessageIndex",
-              "struct Message:",
-              "MessageEntry(",
-              "MessageGroupEntry(",
-              "ChatHistoryListSource",
-              "ChatCustomContentsProtocol",
-          )
-          roots = [
-              root / "submodules" / "ChatHistoryEntry",
-              root / "submodules" / "Postbox",
-              root / "submodules" / "AccountContext",
-              root / "submodules" / "TelegramCore",
-              root / "submodules" / "TelegramUI" / "Components" / "Chat",
-          ]
-          copied = set()
-          for base in roots:
-              if not base.exists():
-                  continue
-              for file in base.rglob("*.swift"):
-                  if file.name not in exact_names and base.name == "Chat":
-                      # Chat UI component tree: only copy the composer node.
-                      if file.name != "ChatTextInputPanelNode.swift":
-                          continue
-                  try:
-                      source = file.read_text(encoding="utf-8")
-                  except Exception:
-                      continue
-                  if file.name in exact_names or any(n in source for n in needles):
-                      rel = file.relative_to(root)
-                      dest = out / rel
-                      dest.parent.mkdir(parents=True, exist_ok=True)
-                      shutil.copy2(file, dest)
-                      copied.add(str(rel))
-          (out / "dependency-files.txt").write_text(
-              "\\n".join(sorted(copied)) + "\\n", encoding="utf-8"
-          )
-          print("Дополнительные исходники:")
-          print("\\n".join(sorted(copied)))
-          PY
-          {
-            echo "Telegram-iOS: $(git rev-parse HEAD)"
-            echo "Telegram-iOS: $(git log -1 --oneline)"
-            echo "Submodules:"
-            git submodule status
-          } > ../telegram-source/telegram-commit.txt
-
-      - name: Отдельно выгрузить ChatTitleView.swift
-        if: always()
-        working-directory: telegram
-        run: |
-          set -euo pipefail
-          mkdir -p ../telegram-source/ChatTitleView
-          MATCH=$(find submodules/TelegramUI -type f -name 'ChatTitleView.swift' -print -quit || true)
-          if [ -n "$MATCH" ]; then
-            mkdir -p "../telegram-source/$(dirname "$MATCH")"
-            cp "$MATCH" "../telegram-source/$MATCH"
-            printf 'Найден и сохранён файл: %s\n' "$MATCH"
-          else
-            echo "::warning::ChatTitleView.swift не найден в submodules/TelegramUI"
-            echo "ChatTitleView.swift не найден" > ../telegram-source/ChatTitleView/NOT_FOUND.txt
-            echo "Проверь закреплённый commit Telegram-iOS и структуру ChatTitleView." >> ../telegram-source/ChatTitleView/NOT_FOUND.txt
-          fi
-
-      - name: Загрузить исходники Telegram
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: telegram-source-for-glassgram
-          path: telegram-source/
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Диагностика - принудительный Major и чтение глобальных переключателей
+      - name: Патч Major и online в видимом заголовке чата
         working-directory: telegram
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift")
-          s = p.read_text(encoding="utf-8")
 
-          old_badge = "if peer.isVerified {"
-          new_badge = '''if peer.isVerified || (peerView.peerId != self.context.account.peerId && (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat)) {'''
-          assert s.count(old_badge) == 1, "не найден блок штатной верификации Telegram"
-          s = s.replace(old_badge, new_badge, 1)
 
-          init_anchor = "        super.init(frame: CGRect())\n"
-          observer = '''        NotificationCenter.default.addObserver(self, selector: #selector(self.glassgramHeaderSettingsChanged), name: Notification.Name("GlassgramHeaderSettingsChanged"), object: nil)
-          '''
-          assert s.count(init_anchor) == 1, "не найден super.init в ChatTitleView"
-          s = s.replace(init_anchor, init_anchor + observer, 1)
+          path = Path("submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift")
+          source = path.read_text(encoding="utf-8")
 
-          method_anchor = "    public func updateThemeAndStrings(theme: PresentationTheme, strings: PresentationStrings) {\n"
-          refresh_method = '''    @objc private func glassgramHeaderSettingsChanged() {
-              let titleContent = self.titleContent
-              self.titleCredibilityIcon = .none
-              self.titleVerifiedIcon = .none
-              self.titleContent = titleContent
-              let _ = self.updateStatus()
-              if !self.manualLayout, let size = self.validLayout {
-                  let _ = self.updateLayout(availableSize: size, transition: .immediate)
+
+          def replace(old, new):
+              global source
+              if source.count(old) != 1:
+                  raise SystemExit(f"{path}: expected one match for {old!r}")
+              source = source.replace(old, new, 1)
+
+
+          replace(
+              """    override public init(frame: CGRect) {
+                  super.init(frame: frame)
               }
-          }
+          """,
+              """    override public init(frame: CGRect) {
+                  super.init(frame: frame)
+                  NotificationCenter.default.addObserver(
+                      self,
+                      selector: #selector(self.glassgramHeaderSettingsChanged),
+                      name: Notification.Name("GlassgramHeaderSettingsChanged"),
+                      object: nil
+                  )
+              }
 
-          '''
-          assert s.count(method_anchor) == 1, "не найден метод обновления заголовка"
-          s = s.replace(method_anchor, refresh_method + method_anchor, 1)
-
-          status_anchor = "        if self.activityNode.transitionToState(state, animation: enableAnimation ? .slide : .none) {"
-          online_override = '''        if let titleContent = self.titleContent,
-             case let .peer(peerView, _, _, _, isScheduledMessages, _, _, _, _) = titleContent,
-             !isScheduledMessages,
-             peerView.peerId != self.context.account.peerId,
-             (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat),
-             UserDefaults.standard.bool(forKey: "glassgram.global.online") {
-              let onlineString = NSAttributedString(string: "online", font: subtitleFont, textColor: titleTheme.rootController.navigationBar.accentTextColor)
-              state = .info(onlineString, .generic)
-          }
-
-          '''
-          assert s.count(status_anchor) == 1, "не найдено место обновления статуса online"
-          s = s.replace(status_anchor, online_override + status_anchor, 1)
-
-          diagnostic = '''        if let titleContent = self.titleContent,
-               case let .peer(peerView, _, _, _, isScheduledMessages, _, _, _, _) = titleContent,
-               !isScheduledMessages,
-               peerView.peerId != self.context.account.peerId,
-               (peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat) {
-              let major = UserDefaults.standard.bool(forKey: "glassgram.global.major")
-              let online = UserDefaults.standard.bool(forKey: "glassgram.global.online")
-              let debugText = "GG DEBUG M=\\(major ? "ON" : "OFF") O=\\(online ? "ON" : "OFF")"
-              let debugString = NSAttributedString(string: debugText, font: subtitleFont, textColor: titleTheme.rootController.navigationBar.accentTextColor)
-              state = .info(debugString, .generic)
-          }
-
-          '''
-          s = s.replace(status_anchor, diagnostic + status_anchor, 1)
-          p.write_text(s, encoding="utf-8")
-          print("ДИАГНОСТИКА: принудительный badge + чтение ключей Major/Online")
-          print("Проверка Major namespace:", "glassgram.global.major" in s and "peerView.peerId.namespace == Namespaces.Peer.CloudUser" in s)
-          print("Проверка Online namespace:", "glassgram.global.online" in s and "state = .info(onlineString, .generic)" in s)
+              @objc private func glassgramHeaderSettingsChanged() {
+                  self.update(transition: .immediate)
+              }
+          """,
+          )
+          replace(
+              "    public let tapped: () -> Void\n",
+              """    private let glassgramMajor: Bool
+              private let glassgramOnline: Bool
+              public let tapped: () -> Void
+          """,
+          )
+          replace(
+              "        self.tapped = tapped\n",
+              """        self.glassgramMajor = UserDefaults.standard.bool(forKey: "glassgram.global.major")
+                  self.glassgramOnline = UserDefaults.standard.bool(forKey: "glassgram.global.online")
+                  self.tapped = tapped
+          """,
+          )
+          replace(
+              "        if lhs.activities != rhs.activities {",
+              """        if lhs.glassgramMajor != rhs.glassgramMajor || lhs.glassgramOnline != rhs.glassgramOnline {
+                      return false
+                  }
+                  if lhs.activities != rhs.activities {""",
+          )
+          replace(
+              """                            if peer.isVerified {
+                                          titleCredibilityIcon = .verified
+                                      }""",
+              """                            if peer.isVerified {
+                                          titleCredibilityIcon = .verified
+                                      } else if component.glassgramMajor,
+                                                peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat,
+                                                let user = peer as? TelegramUser, !user.isDeleted,
+                                                !peer.isFake, !peer.isScam {
+                                          titleCredibilityIcon = .verified
+                                      }""",
+          )
+          replace(
+              """                                } else if let peer = peerView.peer {
+                                              let timestamp = CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970""",
+              """                                } else if component.glassgramOnline,
+                                                    peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat {
+                                              let color = component.theme.rootController.navigationBar.accentTextColor
+                                              let text = NSAttributedString(string: "online", font: subtitleFont, textColor: color)
+                                              state = .info(text, .online)
+                                          } else if let peer = peerView.peer {
+                                              let timestamp = CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970""",
+          )
+          path.write_text(source, encoding="utf-8")
+          print(f"Glassgram Major/Online patched in {path}")
           PY
 
       - name: Выбрать Xcode по versions.json
@@ -239,7 +157,12 @@ jobs:
             echo "::warning::Xcode $XV нет на образе, использую текущий с --overrideXcodeVersion"
             echo "OVERRIDE=--overrideXcodeVersion" >> $GITHUB_ENV
           fi
-          xcodebuild -version
+          XCODE_VERSION=$(xcodebuild -version)
+          echo "$XCODE_VERSION"
+          if ! grep -Eq '^Xcode 27([. ]|$)' <<< "$XCODE_VERSION"; then
+            echo "::error::Для Glassgram требуется Xcode 27"
+            exit 1
+          fi
 
       - name: Подставить ваш api_id / api_hash
         working-directory: telegram

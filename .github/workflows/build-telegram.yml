@@ -118,11 +118,12 @@ jobs:
                                       }""",
               """                            if peer.isVerified {
                                           titleCredibilityIcon = .verified
-                                      } else if component.glassgramMajor,
+                                      }
+                                      if component.glassgramMajor,
                                                 peerView.peerId.namespace == Namespaces.Peer.CloudUser || peerView.peerId.namespace == Namespaces.Peer.SecretChat,
                                                 let user = peer as? TelegramUser, !user.isDeleted,
                                                 !peer.isFake, !peer.isScam {
-                                          titleCredibilityIcon = .verified
+                                          showsGlassgramMajor = true
                                       }""",
           )
           replace(
@@ -135,6 +136,73 @@ jobs:
                                               state = .info(text, .online)
                                           } else if let peer = peerView.peer {
                                               let timestamp = CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970""",
+          )
+          replace(
+              "        private var leftIcon: ComponentView<Empty>?",
+              """        private static let glassgramMajorImage: UIImage = {
+                      let size = CGSize(width: 18.0, height: 18.0)
+                      return UIGraphicsImageRenderer(size: size).image { renderer in
+                          let context = renderer.cgContext
+                          let center = CGPoint(x: 9.0, y: 9.0)
+                          let points = (0..<16).map { index -> CGPoint in
+                              let angle = CGFloat(index) * .pi / 8.0 - .pi / 2.0
+                              let radius: CGFloat = index.isMultiple(of: 2) ? 9.8 : 6.9
+                              return CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
+                          }
+                          let path = UIBezierPath()
+                          path.move(to: CGPoint(x: (points[15].x + points[0].x) / 2.0, y: (points[15].y + points[0].y) / 2.0))
+                          for index in points.indices {
+                              let point = points[index]
+                              let next = points[(index + 1) % points.count]
+                              path.addQuadCurve(to: CGPoint(x: (point.x + next.x) / 2.0, y: (point.y + next.y) / 2.0), controlPoint: point)
+                          }
+                          path.close()
+                          UIColor(red: 0.36, green: 0.69, blue: 0.96, alpha: 1.0).setFill()
+                          path.fill()
+
+                          let crown = UIBezierPath()
+                          crown.move(to: CGPoint(x: 4.8, y: 6.8))
+                          crown.addLine(to: CGPoint(x: 7.3, y: 8.2))
+                          crown.addLine(to: CGPoint(x: 9.0, y: 5.6))
+                          crown.addLine(to: CGPoint(x: 10.7, y: 8.2))
+                          crown.addLine(to: CGPoint(x: 13.2, y: 6.8))
+                          crown.addLine(to: CGPoint(x: 12.1, y: 12.2))
+                          crown.addLine(to: CGPoint(x: 5.9, y: 12.2))
+                          crown.close()
+                          context.setBlendMode(.clear)
+                          crown.fill()
+                      }
+                  }()
+                  private let glassgramMajorIcon = UIImageView(image: View.glassgramMajorImage)
+                  private var leftIcon: ComponentView<Empty>?""",
+          )
+          replace(
+              "            var titleLeftIcon: TitleIconComponent.Kind?",
+              """            var showsGlassgramMajor = false
+                      var titleLeftIcon: TitleIconComponent.Kind?""",
+          )
+          replace(
+              "            var titleLeftIconsWidth: CGFloat = 0.0",
+              """            let majorIconSize = Self.glassgramMajorImage.size
+                      let majorIconSpacing: CGFloat = 4.0
+                      let majorIconWidth = showsGlassgramMajor ? majorIconSize.width + majorIconSpacing : 0.0
+                      var titleLeftIconsWidth: CGFloat = majorIconWidth""",
+          )
+          replace(
+              "            let leadingIconsLayout = chatTitleLeadingIconsLayout(titleFrame: titleFrame,",
+              """            self.glassgramMajorIcon.isHidden = !showsGlassgramMajor
+                      if showsGlassgramMajor {
+                          if self.glassgramMajorIcon.superview == nil {
+                              self.contentContainer.addSubview(self.glassgramMajorIcon)
+                          }
+                          transition.setFrame(view: self.glassgramMajorIcon, frame: CGRect(
+                              x: titleFrame.minX - majorIconWidth,
+                              y: floorToScreenPixels(titleFrame.midY - majorIconSize.height / 2.0),
+                              width: majorIconSize.width,
+                              height: majorIconSize.height
+                          ))
+                      }
+                      let leadingIconsLayout = chatTitleLeadingIconsLayout(titleFrame: titleFrame.offsetBy(dx: -majorIconWidth, dy: 0.0),""",
           )
           path.write_text(source, encoding="utf-8")
           print(f"Glassgram Major/Online patched in {path}")
